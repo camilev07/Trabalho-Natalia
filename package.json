@@ -1,0 +1,12 @@
+{
+  "name": "portfolio-camile-alves",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portfólio profissional com pipeline CI/CD no GitHub Actions",
+  "scripts": {
+    "lint": "htmlhint index.html"
+  },
+  "devDependencies": {
+    "htmlhint": "1.1.4"
+  }
+}

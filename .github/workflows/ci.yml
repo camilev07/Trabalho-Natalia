@@ -1,0 +1,87 @@
+name: CI - Validação do Pull Request
+
+# Dispara apenas em Pull Requests destinados à branch main
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # 1) Primeiro de tudo: o GitHub Pages exige index.html na raiz
+  check-index:
+    name: Verificar index.html
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Verificar existência do index.html na raiz
+        run: |
+          if [ ! -f "index.html" ]; then
+            echo "::error::index.html não encontrado na raiz do projeto. O deploy no GitHub Pages seria impossível."
+            exit 1
+          fi
+          echo "index.html encontrado."
+
+  # 2) Linter de HTML em duas versões do Node.js (Matrix Strategy)
+  lint:
+    name: Linter (Node ${{ matrix.node-version }})
+    needs: check-index
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+
+      - name: Executar o Linter (HTMLHint)
+        run: npm run lint
+
+  # 3) Demais critérios de qualidade para produção
+  validate:
+    name: Validar arquivos, texto e links
+    needs: check-index
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Bloquear arquivos maiores que 500KB
+        run: |
+          big=$(find . -type f -size +500k -not -path "./.git/*" -not -path "./node_modules/*")
+          if [ -n "$big" ]; then
+            echo "::error::Arquivos acima de 500KB encontrados:"
+            echo "$big"
+            exit 1
+          fi
+          echo "Nenhum arquivo acima de 500KB."
+
+      - name: Varredura de termos proibidos (TODO, FIXME, senha, password)
+        run: |
+          OPTS='-r -n --include=*.html --include=*.css --include=*.js --include=*.svg --exclude-dir=.git --exclude-dir=.github --exclude-dir=node_modules'
+          found=0
+          # TODO/FIXME como palavra inteira em maiúsculas (evita falso positivo com "Todos")
+          grep $OPTS -E '\b(TODO|FIXME)\b' . && found=1
+          # Termos sensíveis, sem diferenciar maiúsculas/minúsculas
+          grep $OPTS -i -E 'senha|password' . && found=1
+          if [ "$found" -eq 1 ]; then
+            echo "::error::Termos proibidos encontrados no código (veja as linhas acima)."
+            exit 1
+          fi
+          echo "Nenhum termo proibido encontrado."
+
+      - name: Verificar links e imagens (URLs e caminhos)
+        run: bash .github/scripts/check-links.sh index.html
